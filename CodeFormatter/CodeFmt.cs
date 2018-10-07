@@ -20,22 +20,21 @@ namespace ConsoleApp {
     /// </summary>
     public string Path { get; private set; }
     public bool IsDirectory { get; set; }
+    public bool ShouldReplaceTabs { get; set; }
+    public bool ShouldSimulate { get; set; }
 
-    public CodeFormatter() {
-    }
 
-    /// <summary>
-    /// Validates and sets path member
-    /// returns false if validation fails
-    /// </summary>
-    public bool SetPath(string path) {
+    public CodeFormatter(string path, bool tabs, bool simulate) {
+      // Validates and sets path member
       bool fileExists = File.Exists(path);
       if (fileExists || Directory.Exists(path)) {
         Path = path;
         IsDirectory = fileExists ? false : true;
-        return true;
       }
-      return false;
+      else
+        throw new ArgumentException("Invalid path specified!");
+      ShouldReplaceTabs = tabs;
+      ShouldSimulate = simulate;
     }
 
     /// <summary>
@@ -44,21 +43,22 @@ namespace ConsoleApp {
     public void ReplaceTabs(string filePath, byte numChars = 2) {
       if (string.IsNullOrEmpty(Path))
         return;
-      // simuate for dir now
-      Console.WriteLine(" " + filePath);
-      // dotnet run: relative to location from where executable is run from
-      string[] lines = File.ReadAllLines(filePath);
+      /*string[] lines = File.ReadAllLines(filePath);
       for (int i = 0; i < lines.Length; i++) {
         var line = lines[i];
-      }
-      string spaceString = "  ";
-      string replaceString="";
-      int n = numChars / spaceString.Length;
-      for (int i = 0; i < n; i++)
-        replaceString += spaceString;
+      }*/
       var fileContents = File.ReadAllText(filePath);
-      fileContents = fileContents.Replace("\t", replaceString);
-      File.WriteAllText(filePath, fileContents);
+      if (fileContents.IndexOf('\t') != -1)
+        Console.WriteLine(" " + filePath);
+      if (ShouldSimulate == false) {
+        string spaceString = "  ";
+        string replaceString = "";
+        int n = numChars / spaceString.Length;
+        for (int i = 0; i < n; i++)
+          replaceString += spaceString;
+        fileContents = fileContents.Replace("\t", replaceString);
+        File.WriteAllText(filePath, fileContents);
+      }
     }
 
     /// <summary>
@@ -71,7 +71,8 @@ namespace ConsoleApp {
     /// - Do all styling to apply modern format in source code
     /// </summary>
     public void ProcessFile(string filePath) {
-      ReplaceTabs(filePath);
+      if (ShouldReplaceTabs)
+        ReplaceTabs(filePath);
     }
 
     /// <summary>
@@ -93,8 +94,9 @@ namespace ConsoleApp {
     /// Initiate the ToDo Action for the app
     /// </summary>
     public void Run() {
-      Console.WriteLine("Path is a " + (IsDirectory ? "Dir" : "File"));
-      Console.WriteLine("Selected Action: replacing tabs");
+      if (ShouldReplaceTabs)
+        Console.WriteLine("Selected Action: replacing tabs");
+      Console.WriteLine("Processing " + (IsDirectory ? "Directory: " + Path + ". File list:" : "File:"));
       if (IsDirectory) {
         ProcessDirectory(Path);
       } else

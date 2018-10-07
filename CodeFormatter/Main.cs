@@ -15,20 +15,20 @@ namespace ConsoleApp {
       public bool ShouldReplaceTabs { get; set; }
       [Option('p', "path", Required = true, HelpText = "Location of source file/s.")]
       public string Path { get; set; }
+      [Option("simulate", Required = false, HelpText = "Simulate an action.")]
+      public bool ShouldSimulate { get; set; }
+    }
+
+    static bool ValidateCommandLine(Options claOps) {
+      return true;
     }
 
     static void Main(string[] args) {
-      var app = new CodeFormatter();
       Parser.Default.ParseArguments<Options>(args)
         .WithParsed<Options>(o => {
-          if(o.ShouldReplaceTabs) {
-            if (app.SetPath(o.Path) == false)
-              throw new ArgumentException("Invalid path specified!");
+          if (ValidateCommandLine(o)) {
+            var app = new CodeFormatter(o.Path, o.ShouldReplaceTabs, o.ShouldSimulate);
             app.Run();
-            return ;
-          } else {
-            Console.WriteLine($"Current Arguments: -v {o.ShouldReplaceTabs}");
-            Console.WriteLine("Quick Start Example!");
           }
         });
       return;
