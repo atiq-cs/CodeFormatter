@@ -3,6 +3,7 @@
 
 namespace ConsoleApp {
   using System;
+  using System.IO;
   using CommandLine;
 
   /// <summary>
@@ -29,8 +30,8 @@ namespace ConsoleApp {
     /// returns false if validation fails
     /// </summary>
     public bool SetPath(string path) {
-      bool fileExists = System.IO.File.Exists(path);
-      if (fileExists || System.IO.Directory.Exists(path)) {
+      bool fileExists = File.Exists(path);
+      if (fileExists || Directory.Exists(path)) {
         Path = path;
         IsDirectory = fileExists ? false : true;
         return true;
@@ -39,43 +40,66 @@ namespace ConsoleApp {
     }
 
     /// <summary>
-    /// What if source file size is 1 GB or something, try to avoid reading such files..
+    ///
     /// </summary>
-    public void ReplaceTabs(string filePath, byte numChars=2) {
+    public void ReplaceTabs(string filePath, byte numChars = 2) {
       if (string.IsNullOrEmpty(Path))
-        return ;
-      Console.WriteLine("Replacing tabs for " + Path + "..");
+        return;
+      // simuate for dir now
+      Console.WriteLine(" " + filePath);
       // dotnet run: relative to location from where executable is run from
-      /* string[] lines = System.IO.File.ReadAllLines(filePath);
+      string[] lines = File.ReadAllLines(filePath);
       for (int i = 0; i < lines.Length; i++) {
         var line = lines[i];
-      }*/
+      }
       string spaceString = "  ";
       string replaceString="";
       int n = numChars / spaceString.Length;
       for (int i = 0; i < n; i++)
         replaceString += spaceString;
-      var fileContents = System.IO.File.ReadAllText(filePath);
+      var fileContents = File.ReadAllText(filePath);
       fileContents = fileContents.Replace("\t", replaceString);
-      System.IO.File.WriteAllText(filePath, fileContents);
+      File.WriteAllText(filePath, fileContents);
     }
 
+    /// <summary>
+    /// Set an action based on user choice and perform action to specified file
+    /// This action is stream (file content) editing for the file. Right now,
+    /// following caveats are not taken into account,
+    ///  Unmanageable file size: >= 1 GB, check read files (API in msdn) limit
+    /// Actions:
+    /// - Replace Tabs
+    /// - Do all styling to apply modern format in source code
+    /// </summary>
     public void ProcessFile(string filePath) {
       ReplaceTabs(filePath);
     }
 
     /// <summary>
-    /// Do something to a list of file (one file if provided path is a file)
-    /// 
-    /// Actions:
-    /// - Replace Tabs
-    /// - Do all styling to apply modern format in source code
+    /// Process provided directory (recurse)
+    /// </summary>
+    public void ProcessDirectory(string dirPath) {
+      // Process the list of files found in the directory.
+      string[] fileEntries = Directory.GetFiles(dirPath);
+      foreach (string fileName in fileEntries)
+        ProcessFile(fileName);
+
+      // Recurse into subdirectories of this directory.
+      string[] subdirectoryEntries = Directory.GetDirectories(dirPath);
+      foreach (string subdirectory in subdirectoryEntries)
+        ProcessDirectory(subdirectory);
+    }
+
+    /// <summary>
+    /// Initiate the ToDo Action for the app
     /// </summary>
     public void Run() {
       Console.WriteLine("Path is a " + (IsDirectory ? "Dir" : "File"));
-      if (IsDirectory)
-        throw new NotImplementedException();
-      ProcessFile(Path);
+      Console.WriteLine("Selected Action: replacing tabs");
+      if (IsDirectory) {
+        ProcessDirectory(Path);
+      } else
+        ProcessFile(Path);
     }
   }
 
@@ -83,7 +107,7 @@ namespace ConsoleApp {
   /// Entry Point
   /// 
   /// Handles command line
-  /// instantiates Code Formatter Instance
+  /// Instantiates Code Formatter Instance
   /// and calls required methods based on cmd line provided
   /// 
   /// Run Example, 
