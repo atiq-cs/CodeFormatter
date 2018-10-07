@@ -4,6 +4,7 @@
 namespace ConsoleApp {
   using System;
   using System.IO;
+  using System.Collections.Generic;
 
   /// <summary>
   /// A Code Formatting Application
@@ -18,13 +19,16 @@ namespace ConsoleApp {
     /// Value being empty/null indicats an error state and most methods should
     /// not be called in error state
     /// </summary>
-    public string Path { get; private set; }
-    public bool IsDirectory { get; set; }
-    public bool ShouldReplaceTabs { get; set; }
-    public bool ShouldSimulate { get; set; }
-
+    private string Path { get; set; }
+    private bool IsDirectory { get; set; }
+    private bool ShouldReplaceTabs { get; set; }
+    private bool ShouldSimulate { get; set; }
+    private HashSet<string> ExtList = new HashSet<string>();
+    private int ModifiedFileCount = 0;
 
     public CodeFormatter(string path, bool tabs, bool simulate) {
+      if (path.EndsWith(@"\"))
+        path = path.Substring(0, path.Length - 1);
       // Validates and sets path member
       bool fileExists = File.Exists(path);
       if (fileExists || Directory.Exists(path)) {
@@ -38,7 +42,7 @@ namespace ConsoleApp {
     }
 
     /// <summary>
-    ///
+    /// Replace tabs chars with spaces to specified file
     /// </summary>
     public void ReplaceTabs(string filePath, byte numChars = 2) {
       if (string.IsNullOrEmpty(Path))
@@ -48,16 +52,21 @@ namespace ConsoleApp {
         var line = lines[i];
       }*/
       var fileContents = File.ReadAllText(filePath);
-      if (fileContents.IndexOf('\t') != -1)
-        Console.WriteLine(" " + filePath);
-      if (ShouldSimulate == false) {
-        string spaceString = "  ";
-        string replaceString = "";
-        int n = numChars / spaceString.Length;
-        for (int i = 0; i < n; i++)
-          replaceString += spaceString;
-        fileContents = fileContents.Replace("\t", replaceString);
-        File.WriteAllText(filePath, fileContents);
+      if (fileContents.IndexOf('\t') != -1) {
+        // +1 for '\'
+        Console.WriteLine(" " + (filePath.StartsWith(Path) ? filePath.Substring(
+          Path.Length + 1) : filePath));
+        ExtList.Add(new DirectoryInfo(filePath).Extension);
+        ModifiedFileCount++;
+        if (ShouldSimulate == false) {
+          string spaceString = "  ";
+          string replaceString = "";
+          int n = numChars / spaceString.Length;
+          for (int i = 0; i < n; i++)
+            replaceString += spaceString;
+          fileContents = fileContents.Replace("\t", replaceString);
+          File.WriteAllText(filePath, fileContents);
+        }
       }
     }
 
@@ -76,9 +85,24 @@ namespace ConsoleApp {
     }
 
     /// <summary>
+    /// Check if directory qualifies to be in exclusion list
+    /// Caution: any dir named 'Workspace' will be ignored.
+    /// </summary>
+    private bool IsInExclusionList(string path) {
+      string dirName = new DirectoryInfo(path).Name;
+      var exclusionList = new HashSet<string>() { ".git", "Workspace" };
+      return exclusionList.Contains(dirName);
+    }
+
+    /// <summary>
     /// Process provided directory (recurse)
     /// </summary>
     public void ProcessDirectory(string dirPath) {
+      if (IsInExclusionList(dirPath)) {
+        Console.WriteLine(" [Ignored] " + (dirPath.StartsWith(Path) ? dirPath.
+          Substring(Path.Length + 1) : string.IsNullOrEmpty(dirPath)?".":dirPath));
+        return ;
+      }
       // Process the list of files found in the directory.
       string[] fileEntries = Directory.GetFiles(dirPath);
       foreach (string fileName in fileEntries)
@@ -90,17 +114,30 @@ namespace ConsoleApp {
         ProcessDirectory(subdirectory);
     }
 
+    private void DisplaySummary() {
+      Console.WriteLine("Number of files modified: " + ModifiedFileCount);
+      Console.WriteLine("Following source files covered:");
+      if (ExtList.Count == 0)
+        Console.Write( " [Empty]");
+      foreach (var ext in ExtList)
+        Console.Write(" " + ext + ",");
+      Console.WriteLine();
+    }
+
     /// <summary>
     /// Initiate the ToDo Action for the app
     /// </summary>
     public void Run() {
       if (ShouldReplaceTabs)
-        Console.WriteLine("Selected Action: replacing tabs");
-      Console.WriteLine("Processing " + (IsDirectory ? "Directory: " + Path + ". File list:" : "File:"));
+        Console.WriteLine("Selected Action: replacing tabs" + (ShouldSimulate?
+          " (simulated)": ""));
+      Console.WriteLine("Processing " + (IsDirectory ? "Directory: " + Path + 
+        ", File list:" : "File:"));
       if (IsDirectory) {
         ProcessDirectory(Path);
       } else
         ProcessFile(Path);
+      DisplaySummary();
     }
   }
 }

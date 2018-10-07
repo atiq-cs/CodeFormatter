@@ -8,6 +8,9 @@ namespace ConsoleApp {
   /// <summary>
   /// Entry Point class containing command line parser and instantiator main
   /// method
+  /// Usage,
+  ///  dotnet run -- --replaceTabs --path D:\MyApp --simulate
+  ///  dotnet run -- --replaceTabs --path D:\MyApp
   /// </summary>
   class CodeFmtDemo {
     public class Options {
