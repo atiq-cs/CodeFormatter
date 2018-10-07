@@ -1,19 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-/*
- Consider test-cases where,
- \s stands for start, \e stands for end
-
- \s\e
- \e\s
- \s\s
- \e\e
-
-*/
+﻿// Copyright (c) FFTSys Inc. All rights reserved.
+// Use of this source code is governed by a GPL-v3 license
 
 namespace ConsoleApp {
+  using System;
+
   class Util {
     const int MaxNumLinesToProbe = 8;
 
@@ -22,9 +12,10 @@ namespace ConsoleApp {
 
     /// <summary>
     /// Can be space or tabs
-    /// Returns true if tabs
     /// </summary>
-
+    /// <returns>
+    /// Returns true if tabs
+    /// </returns>
     public bool GetIndentationType(string[] lines) {
       bool isInsideBlockComment = false;
       for (int i = 0, oci = 0; oci < MaxNumLinesToProbe && i < lines.Length; i++) {
@@ -64,7 +55,22 @@ namespace ConsoleApp {
       return 0;
     }
 
-    // Simplified method
+    /// <summary>
+    /// Simplified method: check if we are going outside of comment block if
+    /// previously we were inside. Or check an oppositve thing is happening..
+    /// 
+    /// Consider following test-cases where,
+    /// \s stands for start, \e stands for end
+    ///  \s\e
+    ///  \e\s
+    ///  \s\s
+    ///  \e\e
+    /// </summary>
+    /// <param name="line">Single line</param>
+    /// <param name="isInsideBlockComment">Current status regarding being in block comment</param>
+    /// <returns>
+    /// True if toggling, false otherwise
+    /// </returns>
     bool isBlockCommentStatusToggling(string line, bool isInsideBlockComment) {
       if (isInsideBlockComment) {
         // /* started in some previous line
