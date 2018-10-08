@@ -22,11 +22,12 @@ namespace ConsoleApp {
     private string Path { get; set; }
     private bool IsDirectory { get; set; }
     private bool ShouldReplaceTabs { get; set; }
+    private bool ShouldIndent { get; set; }
     private bool ShouldSimulate { get; set; }
     private HashSet<string> ExtList = new HashSet<string>();
     private int ModifiedFileCount = 0;
 
-    public CodeFormatter(string path, bool tabs, bool simulate) {
+    public CodeFormatter(string path, bool tabs, bool indent, bool simulate) {
       if (path.EndsWith(@"\"))
         path = path.Substring(0, path.Length - 1);
       // Validates and sets path member
@@ -38,6 +39,7 @@ namespace ConsoleApp {
       else
         throw new ArgumentException("Invalid path specified!");
       ShouldReplaceTabs = tabs;
+      ShouldIndent = indent;
       ShouldSimulate = simulate;
     }
 
@@ -47,15 +49,10 @@ namespace ConsoleApp {
     public void ReplaceTabs(string filePath, byte numChars = 2) {
       if (string.IsNullOrEmpty(Path))
         return;
-      /*string[] lines = File.ReadAllLines(filePath);
-      for (int i = 0; i < lines.Length; i++) {
-        var line = lines[i];
-      }*/
       var fileContents = File.ReadAllText(filePath);
       if (fileContents.IndexOf('\t') != -1) {
         // +1 for '\'
-        Console.WriteLine(" " + (filePath.StartsWith(Path) ? filePath.Substring(
-          Path.Length + 1) : filePath));
+        Console.WriteLine(" " + GetSimplifiedPath(filePath));
         ExtList.Add(new DirectoryInfo(filePath).Extension);
         ModifiedFileCount++;
         if (ShouldSimulate == false) {
@@ -71,6 +68,54 @@ namespace ConsoleApp {
     }
 
     /// <summary>
+    /// Replace indentation with specified (2 by default) spaces to specified file
+    /// 
+    /// Find default indent (number of spaces) in source file
+    /// </summary>
+    public void IndentFix(string filePath, byte numChars = 2) {
+      if (string.IsNullOrEmpty(Path))
+        return;
+      string[] lines = File.ReadAllLines(filePath);
+      Util utilDemo = new Util();
+      int numIndentSpaces = utilDemo.GetIndentAmount(lines);
+      if (numIndentSpaces == 0) {
+        Console.Write(" [Ignored] " + GetSimplifiedPath(filePath) + ": ");
+        var color = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("indent unrecognized!");
+        Console.ForegroundColor = color;
+      }
+      else if (numIndentSpaces == numChars)
+        Console.WriteLine(" [Ignored] " + GetSimplifiedPath(filePath) + ": already indented");
+      if (numIndentSpaces == 0 || numIndentSpaces == numChars) {
+        return ;
+      }
+      Console.WriteLine(" " + GetSimplifiedPath(filePath) + ": indent " + numIndentSpaces);
+      ModifiedFileCount++;
+      ExtList.Add(new DirectoryInfo(filePath).Extension);
+      if (ShouldSimulate == false) {
+        string spaceString = "  ";
+        string sourceString = "";
+        int n = numIndentSpaces / spaceString.Length;
+        for (int i = 0; i < n; i++)
+          sourceString += spaceString;
+        string replaceString = "";
+        n = numChars / spaceString.Length;
+        for (int i = 0; i < n; i++)
+          replaceString += spaceString;
+        for (int i = 0; i < lines.Length; i++)
+          lines[i] = lines[i].Replace(sourceString, replaceString);
+        File.WriteAllLines(filePath, lines);
+      }
+    }
+
+    private string GetSimplifiedPath(string path) {
+      return IsDirectory?(path.StartsWith(Path) ? path.
+          Substring(Path.Length + 1) : string.IsNullOrEmpty(path) ? "." :
+          path):path;
+    }
+
+    /// <summary>
     /// Set an action based on user choice and perform action to specified file
     /// This action is stream (file content) editing for the file. Right now,
     /// following caveats are not taken into account,
@@ -79,9 +124,11 @@ namespace ConsoleApp {
     /// - Replace Tabs
     /// - Do all styling to apply modern format in source code
     /// </summary>
-    public void ProcessFile(string filePath) {
+    private void ProcessFile(string filePath) {
       if (ShouldReplaceTabs)
         ReplaceTabs(filePath);
+      else if (ShouldIndent)
+        IndentFix(filePath);
     }
 
     /// <summary>
@@ -97,10 +144,9 @@ namespace ConsoleApp {
     /// <summary>
     /// Process provided directory (recurse)
     /// </summary>
-    public void ProcessDirectory(string dirPath) {
+    private void ProcessDirectory(string dirPath) {
       if (IsInExclusionList(dirPath)) {
-        Console.WriteLine(" [Ignored] " + (dirPath.StartsWith(Path) ? dirPath.
-          Substring(Path.Length + 1) : string.IsNullOrEmpty(dirPath)?".":dirPath));
+        Console.WriteLine(" [Ignored] " + GetSimplifiedPath(dirPath));
         return ;
       }
       // Process the list of files found in the directory.
@@ -114,7 +160,7 @@ namespace ConsoleApp {
         ProcessDirectory(subdirectory);
     }
 
-    private void DisplaySummary() {
+    public void DisplaySummary() {
       Console.WriteLine("Number of files modified: " + ModifiedFileCount);
       Console.WriteLine("Following source files covered:");
       if (ExtList.Count == 0)
@@ -131,13 +177,15 @@ namespace ConsoleApp {
       if (ShouldReplaceTabs)
         Console.WriteLine("Selected Action: replacing tabs" + (ShouldSimulate?
           " (simulated)": ""));
+      else if (ShouldIndent)
+        Console.WriteLine("Selected Action: indentation fix" + (ShouldSimulate ?
+          " (simulated)" : ""));
       Console.WriteLine("Processing " + (IsDirectory ? "Directory: " + Path + 
         ", File list:" : "File:"));
       if (IsDirectory) {
         ProcessDirectory(Path);
       } else
         ProcessFile(Path);
-      DisplaySummary();
     }
   }
 }

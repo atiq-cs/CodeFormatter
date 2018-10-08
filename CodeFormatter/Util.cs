@@ -5,54 +5,42 @@ namespace ConsoleApp {
   using System;
 
   class Util {
-    const int MaxNumLinesToProbe = 8;
+    const int MaxNumLinesToProbe = 16;
+    const int MinIndentLengthExpected = 2;
+    const int MaxColumnWrapLength = 120;
 
     public Util() {
     }
 
     /// <summary>
-    /// Can be space or tabs
+    /// Get number of space count in indentation in specified source
     /// </summary>
-    /// <returns>
-    /// Returns true if tabs
-    /// </returns>
-    public bool GetIndentationType(string[] lines) {
-      bool isInsideBlockComment = false;
-      for (int i = 0, oci = 0; oci < MaxNumLinesToProbe && i < lines.Length; i++) {
-        var line = lines[i];
-        if (isBlockCommentStatusToggling(line, isInsideBlockComment))
-          isInsideBlockComment = isInsideBlockComment ? false : true;
-        if (isInsideBlockComment == false)
-          oci++;
-
-
-      }
-      return false;
-    }
-
-    public int IndentationSettingsFinder(string[] lines) {
+    /// <param name="lines">Lines of source file</param>
+    public int GetIndentAmount(string[] lines) {
+      // Look for lines starting with 2 spaces, find the first non-whitespace char
+      // Inside comment block this might not work. Hence, try outside of comment
+      // blocks.
       // Display the file contents by using a foreach loop.
-      Console.WriteLine("Contents:");
+      // Console.WriteLine("Contents:");
       bool isInsideBlockComment = false;
-      int prevIndentLen = 0, indentLength=0;
-      for (int i=0; i<MaxNumLinesToProbe && i<lines.Length; i++) {
+      int length = MaxColumnWrapLength;   // max column wrap number
+      int currentLength;
+
+      // oci: outside comment line index
+      for (int i = 0, oci = 0; oci < MaxNumLinesToProbe && i < lines.Length; i++) {
         var line = lines[i];
         if (isBlockCommentStatusToggling(line, isInsideBlockComment)) {
           isInsideBlockComment = isInsideBlockComment ? false : true;
-          Console.WriteLine(line + "\t[inside block comment? " + isInsideBlockComment + "]");
         }
-        else { // Use a tab to indent each line of the file.
-          Console.WriteLine(line);
-        }
-        
-        int len = GetIndentationLength(line, isInsideBlockComment);
-        if (len > 0) {
-          indentLength = len;
-          prevIndentLen = indentLength;
-        }
-      }
+        if (isInsideBlockComment == false)
+          oci++;
 
-      return 0;
+        if ((currentLength = GetIndentationLengthFromLine(line, isInsideBlockComment)) > 0)
+          length = Math.Min(length, currentLength);
+        if (oci == MaxNumLinesToProbe && length == MaxColumnWrapLength)
+          oci = 0;
+      }
+      return length==MaxColumnWrapLength?0:length;
     }
 
     /// <summary>
@@ -65,6 +53,10 @@ namespace ConsoleApp {
     ///  \e\s
     ///  \s\s
     ///  \e\e
+    ///  
+    /// Consider cases for testing for inside block comment,
+    /// started in some previous line do we get an ending
+    /// if last found /* is before last found */ then toggle
     /// </summary>
     /// <param name="line">Single line</param>
     /// <param name="isInsideBlockComment">Current status regarding being in block comment</param>
@@ -73,9 +65,6 @@ namespace ConsoleApp {
     /// </returns>
     bool isBlockCommentStatusToggling(string line, bool isInsideBlockComment) {
       if (isInsideBlockComment) {
-        // /* started in some previous line
-        // do we get an ending */ ?
-        // if last found /* is before last found */ then toggle
         int startPos = line.LastIndexOf("*/");
         if (startPos == -1)
           return false;
@@ -95,19 +84,21 @@ namespace ConsoleApp {
       }
     }
 
-    /* 
-     * return value
-     * -1 - Error
-     * 0 - no indentation
-     * 
-     */
-    int GetIndentationLength(string line, bool isInsideBlockComment) {
-      if (isInsideBlockComment) {
-        if (line.StartsWith("**"))
-          return -1;
-
-      } else {
-        // int indentl
+    /// <summary>
+    /// For a line of code outside of comment block, find number of spaces used for indentation
+    /// </summary>
+    /// <param name="line">Line to inspect</param>
+    /// <param name="isInsideBlockComment">Indicates whether we are inside a block comment</param>
+    /// <returns>
+    /// On error (inside block comment or ...), returns 0
+    /// </returns>
+    int GetIndentationLengthFromLine(string line, bool isInsideBlockComment) {
+      if (isInsideBlockComment == false && line.StartsWith("  ")) {
+        int i = MinIndentLengthExpected;
+        for (; i < line.Length; i++)
+          if (line[i] != ' ')
+            break;
+        return i;
       }
       return 0;
     }
