@@ -16,6 +16,74 @@ namespace ConsoleApp {
     /// Get number of space count in indentation in specified source
     /// </summary>
     /// <param name="lines">Lines of source file</param>
+    public bool IndentAndDocumentationFix(string[] lines, bool indent, int
+        numIndentSpaces, byte numChars, bool simulate) {
+      string spaceString = "  ";
+      string sourceString = "";
+      int n = numIndentSpaces / spaceString.Length;
+      for (int i = 0; i < n; i++)
+        sourceString += spaceString;
+      string replaceString = "";
+      n = numChars / spaceString.Length;
+      for (int i = 0; i < n; i++)
+        replaceString += spaceString;
+
+      bool isInsideBlockComment = false, done = false;
+      bool isModified = false;
+      for (int i = 0; i < lines.Length; i++) {
+        var line = (simulate || indent==false)? lines[i]: lines[i].Replace(sourceString, replaceString);
+        if (done == false) {
+          if (isBlockCommentStatusToggling(line, isInsideBlockComment)) {
+            isInsideBlockComment = isInsideBlockComment ? false : true;
+            if (isInsideBlockComment == false)
+              done = true;
+          }
+          string oldline = line;
+          line = ReadAndFormat(line);
+          if (oldline != line)
+            isModified = true;
+          if (simulate == false)
+            line = oldline;
+          }
+        lines[i] = line;
+      }
+      return isModified;
+    }
+
+    /// <summary>
+    /// Write the string that we wanna write to fix old comment/docu style
+    /// 
+    /// if no key is found or found key cannot be mapped (has a length greater
+    /// than limit) consider it as continuation multi-line value for previouso
+    /// key
+    /// </summary>
+    /// <param name="lines">Lines of source file</param>
+    private string ReadAndFormat(string line) {
+      // trimstart https://docs.microsoft.com/en-us/dotnet/api/system.string.trimstart?view=netframework-4.7.2
+      if (line.TrimStart(' ').StartsWith("/*"))
+        return line;
+      if (line.TrimEnd(' ').EndsWith("*/"))
+        return line;
+      if (line.StartsWith("*"))
+        line = line.Substring(1);
+      else if (line.StartsWith(" *"))
+        line = line.Substring(2);
+      if (string.IsNullOrEmpty(line))
+        return "*";
+      // if on first line, key not found that's an error
+      var tokens = line.TrimStart().Split(':');
+      var key = tokens[0].TrimStart(' ').TrimEnd(' ');
+      // if key is not recognized then entire line is val for key that was previously recognized
+      var val = tokens.Length>1?tokens[1].TrimStart(' ').TrimEnd(' '):"";
+      Console.WriteLine("key: " + key + " val: " + val);
+      return line;
+      // var dict = new Dictionary<string, string>();
+    }
+
+    /// <summary>
+    /// Get number of space count in indentation in specified source
+    /// </summary>
+    /// <param name="lines">Lines of source file</param>
     public int GetIndentAmount(string[] lines) {
       // Look for lines starting with 2 spaces, find the first non-whitespace char
       // Inside comment block this might not work. Hence, try outside of comment
@@ -31,7 +99,12 @@ namespace ConsoleApp {
         var line = lines[i];
         if (isBlockCommentStatusToggling(line, isInsideBlockComment)) {
           isInsideBlockComment = isInsideBlockComment ? false : true;
+          // Console.WriteLine(line + "\t[inside block comment? " + isInsideBlockComment + "]");
         }
+        /*else {
+          Console.WriteLine(line);
+        }*/
+
         if (isInsideBlockComment == false)
           oci++;
 

@@ -22,12 +22,12 @@ namespace ConsoleApp {
     private string Path { get; set; }
     private bool IsDirectory { get; set; }
     private bool ShouldReplaceTabs { get; set; }
-    private bool ShouldIndent { get; set; }
     private bool ShouldSimulate { get; set; }
     private HashSet<string> ExtList = new HashSet<string>();
     private int ModifiedFileCount = 0;
+    private string[] lines = null;
 
-    public CodeFormatter(string path, bool tabs, bool indent, bool simulate) {
+    public CodeFormatter(string path, bool tabs, bool simulate) {
       if (path.EndsWith(@"\"))
         path = path.Substring(0, path.Length - 1);
       // Validates and sets path member
@@ -39,7 +39,6 @@ namespace ConsoleApp {
       else
         throw new ArgumentException("Invalid path specified!");
       ShouldReplaceTabs = tabs;
-      ShouldIndent = indent;
       ShouldSimulate = simulate;
     }
 
@@ -72,13 +71,20 @@ namespace ConsoleApp {
     /// 
     /// Find default indent (number of spaces) in source file
     /// </summary>
-    public void IndentFix(string filePath, byte numChars = 2) {
+    public void IndentAndDocumentationFix(string filePath) {
       if (string.IsNullOrEmpty(Path))
         return;
-      string[] lines = File.ReadAllLines(filePath);
+      lines = File.ReadAllLines(filePath);
+      if (lines == null || lines.Length == 0)
+        return;
+
       Util utilDemo = new Util();
+      byte numChars = 2;
       int numIndentSpaces = utilDemo.GetIndentAmount(lines);
-      if (numIndentSpaces == 0) {
+      bool shouldIndent = false;
+
+      // 3 is unexpected! for my project
+      if (numIndentSpaces == 0 || numIndentSpaces == 3) {
         Console.Write(" [Ignored] " + GetSimplifiedPath(filePath) + ": ");
         var color = Console.ForegroundColor;
         Console.ForegroundColor = ConsoleColor.Red;
@@ -87,26 +93,25 @@ namespace ConsoleApp {
       }
       else if (numIndentSpaces == numChars)
         Console.WriteLine(" [Ignored] " + GetSimplifiedPath(filePath) + ": already indented");
-      if (numIndentSpaces == 0 || numIndentSpaces == numChars) {
-        return ;
+      else
+        shouldIndent = true;
+      if (shouldIndent) {
+        ModifiedFileCount++;
+        ExtList.Add(new DirectoryInfo(filePath).Extension);
       }
-      Console.WriteLine(" " + GetSimplifiedPath(filePath) + ": indent " + numIndentSpaces);
-      ModifiedFileCount++;
-      ExtList.Add(new DirectoryInfo(filePath).Extension);
-      if (ShouldSimulate == false) {
-        string spaceString = "  ";
-        string sourceString = "";
-        int n = numIndentSpaces / spaceString.Length;
-        for (int i = 0; i < n; i++)
-          sourceString += spaceString;
-        string replaceString = "";
-        n = numChars / spaceString.Length;
-        for (int i = 0; i < n; i++)
-          replaceString += spaceString;
-        for (int i = 0; i < lines.Length; i++)
-          lines[i] = lines[i].Replace(sourceString, replaceString);
+      bool hadDocuFix =  utilDemo.IndentAndDocumentationFix(lines, shouldIndent, numIndentSpaces, 2, simulate: ShouldSimulate);
+      if ((shouldIndent || hadDocuFix) && ShouldSimulate==false)
         File.WriteAllLines(filePath, lines);
-      }
+    }
+
+    /// <summary>
+    /// Fix comment style
+    /// 
+    /// Called followed by indent fix
+    /// </summary>
+    public void DocumentationFix(string filePath, byte numChars = 2) {
+      if (string.IsNullOrEmpty(Path) || lines == null || lines.Length == 0)
+        return;
     }
 
     private string GetSimplifiedPath(string path) {
@@ -127,8 +132,9 @@ namespace ConsoleApp {
     private void ProcessFile(string filePath) {
       if (ShouldReplaceTabs)
         ReplaceTabs(filePath);
-      else if (ShouldIndent)
-        IndentFix(filePath);
+      else {
+        IndentAndDocumentationFix(filePath);
+      }
     }
 
     /// <summary>
@@ -177,8 +183,8 @@ namespace ConsoleApp {
       if (ShouldReplaceTabs)
         Console.WriteLine("Selected Action: replacing tabs" + (ShouldSimulate?
           " (simulated)": ""));
-      else if (ShouldIndent)
-        Console.WriteLine("Selected Action: indentation fix" + (ShouldSimulate ?
+      else
+        Console.WriteLine("Selected Action: indentation and documentation style fix" + (ShouldSimulate?
           " (simulated)" : ""));
       Console.WriteLine("Processing " + (IsDirectory ? "Directory: " + Path + 
         ", File list:" : "File:"));
