@@ -15,112 +15,376 @@ namespace ConsoleApp {
   /// </summary>
   class CodeFormatter {
     /// <summary>
-    /// Location of provided source files or directory to process
-    /// Value being empty/null indicats an error state and most methods should
-    /// not be called in error state
+    /// Location of input source file or directory to process
+    /// Value being empty/null indicates an error state. Most methods should
+    /// not be called in such  error state
     /// </summary>
     private string Path { get; set; }
     private bool IsDirectory { get; set; }
+
+    // States from CLA
     private bool ShouldReplaceTabs { get; set; }
+    private bool ShouldIndent { get; set; }
     private bool ShouldSimulate { get; set; }
+
+    private HashSet<string> ExclusionList;
+    // Actions Summary Related
     private HashSet<string> ExtList = new HashSet<string>();
     private int ModifiedFileCount = 0;
-    private string[] lines = null;
 
-    public CodeFormatter(string path, bool tabs, bool simulate) {
-      if (path.EndsWith(@"\"))
-        path = path.Substring(0, path.Length - 1);
-      // Validates and sets path member
-      bool fileExists = File.Exists(path);
-      if (fileExists || Directory.Exists(path)) {
-        Path = path;
-        IsDirectory = fileExists ? false : true;
+    /// <summary>
+    /// Props/methods related to single file processing
+    /// <remarks>
+    /// This internal class should not be aware of outer cless details such as
+    /// <c> ShouldSimulate </c>
+    /// </remarks>  
+    /// </summary>
+    class FileInfoType {
+      public string Path { get; set; }
+      public bool IsModified { get; set; }
+      public string[] Lines { get; set; }
+
+      public void Init(string Path) {
+        this.Path = Path;
+        IsModified = false;
+        Lines = null;
+        ModInfo = string.Empty;
       }
-      else
-        throw new ArgumentException("Invalid path specified!");
-      ShouldReplaceTabs = tabs;
-      ShouldSimulate = simulate;
+      public void ReadFile() {
+        Lines = File.ReadAllLines(Path);
+        if (Lines == null || Lines.Length == 0)
+          throw new IOException("Unexpected file content!");
+      }
+
+      public void WriteFile() { File.WriteAllLines(Path, Lines); }
+      public void SetDirtyFlag(string str) {
+        if (IsModified) { ModInfo += ", " + str; }
+        else { IsModified = true;
+          ModInfo += str;
+        }
+      }
+
+      // list of actions being performed in the file
+      public string ModInfo { get; set; }
+    }
+    FileInfoType FileInfo = new FileInfoType();
+
+    // Variables/settings related to Indentation
+    private const int MaxColumnWrapLength = 120;    // max column wrap number
+    private const int MinIndentLengthExpected = 2;
+
+    // Variables/settings related to Comment Style/Documentation
+    private Dictionary<string, string> CBKeysDict;
+
+    /// <summary>
+    /// Constructor: sets first 5 properties
+    /// </summary>
+    public CodeFormatter(string Path, bool ShouldReplaceTabs, bool ShouldIndent,
+        bool ShouldSimulate) {
+      // Sets path member and directory flag
+      IsDirectory = File.Exists(Path) ? false : true;
+      this.Path = Path;
+      this.ShouldReplaceTabs = ShouldReplaceTabs;
+      this.ShouldIndent = ShouldIndent;
+      this.ShouldSimulate = ShouldSimulate;
+
+      /// Be aware, any dir named 'Workspace' will be ignored.
+      ExclusionList = new HashSet<string>() { ".git", "Workspace" };
+      CBKeysDict = new Dictionary<string, string>() { { "Title", "Title " }, { "Problem Title", "Title " }, { "Problem Name", "Title " }, { "Problem", "Title " }, { "Problem URL", "URL   " }, { "Date", "Date  " }, { "Author", "Author" }, { "Complexity", "Comp  " }, { "Status", "Status" }, { "Desc", "Notes " }, { "Notes", "Notes " }, { "meta", "meta  " }, { "Email", "Email " }, { "ref", "Ref" } };
     }
 
     /// <summary>
     /// Replace tabs chars with spaces to specified file
+    /// <remarks> This method has its own IO; doesn't use FileInfo </remarks>  
     /// </summary>
-    public void ReplaceTabs(string filePath, byte numChars = 2) {
-      if (string.IsNullOrEmpty(Path))
-        return;
-      var fileContents = File.ReadAllText(filePath);
+    public void ReplaceTabs(byte numChars = MinIndentLengthExpected) {
+      var fileContents = File.ReadAllText(FileInfo.Path);
       if (fileContents.IndexOf('\t') != -1) {
         // +1 for '\'
-        Console.WriteLine(" " + GetSimplifiedPath(filePath));
-        ExtList.Add(new DirectoryInfo(filePath).Extension);
-        ModifiedFileCount++;
         if (ShouldSimulate == false) {
+          FileInfo.SetDirtyFlag("tabs");
           string spaceString = "  ";
           string replaceString = "";
           int n = numChars / spaceString.Length;
           for (int i = 0; i < n; i++)
             replaceString += spaceString;
           fileContents = fileContents.Replace("\t", replaceString);
-          File.WriteAllText(filePath, fileContents);
+          File.WriteAllText(FileInfo.Path, fileContents);
         }
       }
     }
 
     /// <summary>
-    /// Replace indentation with specified (2 by default) spaces to specified file
-    /// 
+    /// Indent with provided number of spaces, replace previous indentation chars
     /// Find default indent (number of spaces) in source file
+    /// Avoid touching if found default indent count is less than 4 !
+    /// Replaces indentation in every line regardless whether insice comment block or not
     /// </summary>
-    public void IndentAndDocumentationFix(string filePath) {
-      if (string.IsNullOrEmpty(Path))
-        return;
-      lines = File.ReadAllLines(filePath);
-      if (lines == null || lines.Length == 0)
-        return;
-
-      Util utilDemo = new Util();
-      byte numChars = 2;
-      int numIndentSpaces = utilDemo.GetIndentAmount(lines);
-      bool shouldIndent = false;
-
+    public void Indent(byte numChars = 2) {
+      int numIndentSpaces = GetIndentAmount();
       // 3 is unexpected! for my project
       if (numIndentSpaces == 0 || numIndentSpaces == 3) {
-        Console.Write(" [Ignored] " + GetSimplifiedPath(filePath) + ": ");
-        var color = Console.ForegroundColor;
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("indent unrecognized!");
-        Console.ForegroundColor = color;
+        // Console.WriteLine("indent unrecognized!");
       }
-      else if (numIndentSpaces == numChars)
-        Console.WriteLine(" [Ignored] " + GetSimplifiedPath(filePath) + ": already indented");
-      else
-        shouldIndent = true;
-      if (shouldIndent) {
-        ModifiedFileCount++;
-        ExtList.Add(new DirectoryInfo(filePath).Extension);
+      else if (numIndentSpaces == numChars) {
+        // Console.WriteLine(" already indented");
       }
-      bool hadDocuFix =  utilDemo.IndentAndDocumentationFix(lines, shouldIndent, numIndentSpaces, 2, simulate: ShouldSimulate);
-      if ((shouldIndent || hadDocuFix) && ShouldSimulate==false)
-        File.WriteAllLines(filePath, lines);
+
+      if (numIndentSpaces < 4)
+        return ;
+
+      FileInfo.SetDirtyFlag("indent");
+
+      string spaceString = "  ", sourceString = spaceString;
+      int n = numIndentSpaces / spaceString.Length;
+      for (int i = 1; i < n; i++)
+        sourceString += spaceString;
+      string replaceString = "  ";
+      n = numChars / spaceString.Length;
+      for (int i = 1; i < n; i++)
+        replaceString += spaceString;
+      for (int i = 0; i < FileInfo.Lines.Length; i++)
+        FileInfo.Lines[i] = FileInfo.Lines[i].Replace(sourceString, replaceString);
     }
 
     /// <summary>
     /// Fix comment style
-    /// 
-    /// Called followed by indent fix
+    /// Can be callled followed by indent fix
+    /// ToDo later: detect if a line is modified and set a dirty flag based on that
     /// </summary>
-    public void DocumentationFix(string filePath, byte numChars = 2) {
-      if (string.IsNullOrEmpty(Path) || lines == null || lines.Length == 0)
-        return;
-    }
+    public void FixDocumentation() {
+      int startCBIndex, endCBIndex;
+      GetSpecialCommentBlock(out startCBIndex, out endCBIndex);
+      SetCBEdgeLine(true, startCBIndex);
+      FileInfo.SetDirtyFlag("docu");
 
-    private string GetSimplifiedPath(string path) {
-      return IsDirectory?(path.StartsWith(Path) ? path.
-          Substring(Path.Length + 1) : string.IsNullOrEmpty(path) ? "." :
-          path):path;
+      for (int i = startCBIndex + 1; i < endCBIndex; i++) {
+        ReadAndFormat(i);
+      }
+
+      SetCBEdgeLine(false, endCBIndex);
     }
 
     /// <summary>
+    /// <param name="FileInfo.Path">Path of source file</param>  
+    /// <returns> Returns true if soure contains tab.</returns>  
+    /// <exception> <see cref="File::ReadAllText"/> </exception>
+    /// </summary>
+    private bool FileContainsTab() {
+      return File.ReadAllText(FileInfo.Path).IndexOf('\t') != -1;
+    }
+
+    /// <summary>
+    /// Get indentation space count in specified source
+    /// </summary>
+    /// <param name="lines">Lines of source file</param>
+    private int GetIndentAmount() {
+      // Look for lines starting with 2 spaces, find the first non-whitespace char
+      // Inside comment block this might not work. Hence, try outside of comment
+      // blocks.
+      // Display the file contents by using a foreach loop.
+      bool isInsideBlockComment = false;
+      int length = MaxColumnWrapLength;   
+      int currentLength;
+      const int MaxNumLinesToProbe = 16;
+
+      // oci: outside comment line index
+      for (int i = 0, oci = 0; oci < MaxNumLinesToProbe && i < FileInfo.Lines.Length; i++) {
+        var line = FileInfo.Lines[i];
+        if (isBlockCommentStatusToggling(line, isInsideBlockComment))
+          isInsideBlockComment = isInsideBlockComment ? false : true;
+        if (isInsideBlockComment == false)
+          oci++;
+        if ((currentLength = GetIndentationLengthFromLine(line, isInsideBlockComment)) > 0)
+          length = Math.Min(length, currentLength);
+        if (oci == MaxNumLinesToProbe && length == MaxColumnWrapLength)
+          oci = 0;
+      }
+      return length == MaxColumnWrapLength ? 0 : length;
+    }
+
+    /// <summary>
+    /// For a line of code outside of comment block, find number of spaces used for indentation
+    /// </summary>
+    /// <param name="line">Line to inspect</param>
+    /// <param name="isInsideBlockComment">Indicates whether we are inside a block comment</param>
+    /// <returns>
+    /// On error (inside block comment or ...), returns 0
+    /// </returns>
+    private int GetIndentationLengthFromLine(string line, bool isInsideBlockComment) {
+      if (isInsideBlockComment == false && line.StartsWith("  ")) {
+        int i = MinIndentLengthExpected;
+        for (; i < line.Length; i++)
+          if (line[i] != ' ')
+            break;
+        return i;
+      }
+      return 0;
+    }
+
+    /// <summary>
+    /// Reason to spearate nasty commend finding details such as
+    /// <c>isBlockCommentStatusToggling</c>. Verifies output values
+    /// Right only verifies using our unique starting style and ending style, ensures there's a
+    /// comment line in between.
+    /// Later, may be verify if found block contains property as well.
+    /// </summary>
+    /// <param name="start"> start of result comment block</param>
+    /// <param name="end"> end of result comment block</param>
+    private void GetSpecialCommentBlock(out int start, out int end) {
+      start = end = -1;
+      for (int i = 0; i < FileInfo.Lines.Length; i++) {
+        var line = FileInfo.Lines[i];
+        if (start == -1) {
+          if (line.
+            StartsWith("/***********************************************************************")
+            || line.StartsWith("/*")
+          ) {
+            start = i;
+            continue;
+          }
+        }
+        else if (line.
+          EndsWith("***********************************************************************/") ||
+          line.EndsWith("*/")) {
+          end = i;
+          if (end - start < 2) { start = end = -1; }
+          else break;
+        }
+      }
+      if (start == -1 || end == -1 || end - start < 2)
+        throw new InvalidOperationException("Invalid comment block for " + FileInfo.Path);
+    }
+
+    /// <summary>
+    /// Get key, value pair and write them. Value would need formatting
+    /// 
+    /// if no key is found or found key cannot be mapped (has a length greater
+    /// than limit) consider it as continuation multi-line value for previouso
+    /// key
+    /// Using 'Split' is not the right approach here. If key is not known,
+    /// - this can be strings like http://, an explanation of prevoius term
+    /// - : for other means
+    /// - For now just inspect for anything exceptional..
+    /// 
+    /// Should be easy to find the key since "Key" strictly cannot contain ':'
+    /// 
+    /// <remarks> Only for lines inside comment block..</remarks>  
+    /// </summary>
+    /// <param name="index"> line number to udpate </param>
+    private void ReadAndFormat(int index) {
+      var line = FileInfo.Lines[index];
+      if (line.StartsWith("*"))
+        line = line.Substring(1);
+      else if (line.StartsWith(" *"))
+        line = line.Substring(2);
+      if (string.IsNullOrEmpty(line))
+        line = "*";
+      else {
+        // if on first line, key not found that's an error
+        // on this comment: we don't know if this is first line or whatever line it is!
+        var pos = line.IndexOf(':');
+        var tempKey = line.Substring(0, pos);
+        if (pos == -1 || pos > 16 || tempKey.EndsWith("http") || tempKey.EndsWith("https")) {
+          // About 3 chars for indenting values (that don't have keys)
+          line = "*   " + line.TrimStart().TrimEnd();
+        }
+        else {
+          string newKey = "";
+          string key = line.Substring(0, pos).TrimStart().TrimEnd();
+          if (CBKeysDict.TryGetValue(key, out newKey) == false)
+            throw new InvalidOperationException("key not found: " + key + ", file: " + FileInfo.Path);
+          var val = line.Substring(pos + 1).TrimStart().TrimEnd();
+          if (key == "Date")
+            val = FormatDate(val);
+          line = "* " + newKey + " : " + val;
+        }
+      }
+      // Debug
+      // Console.WriteLine(line);
+      // Consider dirty flag setting some where near here..
+      FileInfo.Lines[index] = line;
+    }
+
+    /// <summary>
+    /// Sets the starting and ending line of the comment block
+    /// </summary>
+    /// <param name="isStart"> is it the start of comment block </param>
+    /// <param name="index"> line number to udpate </param>
+    private void SetCBEdgeLine(bool isStart, int index) {
+      const string edgeMarker = 
+      "***************************************************************************************************";
+      FileInfo.Lines[index] = isStart? ("/" + edgeMarker) : (edgeMarker + "/");
+    }
+
+    /// <summary>
+    /// <param name="FileInfo.Path">Path of source file</param>  
+    /// <remarks> Currently applies only to files.</remarks>  
+    /// <returns> Returns necessary suffix of file path.</returns>  
+    /// </summary>
+    private string GetSimplifiedPath(string path) {
+        return IsDirectory ? (path.StartsWith(Path) ? path.
+            Substring(Path.Length + 1) : string.IsNullOrEmpty(path) ? "." :
+            path) : path;
+    }
+
+    /// <summary>
+    /// <param name="FileInfo.Path">Path of source file</param>  
+    /// <remarks> Currently applies only to files.</remarks>  
+    /// <returns> Returns necessary suffix of file path.</returns>  
+    /// </summary>
+    private string FormatDate(string dateStr) {
+      DateTime parsedDate = DateTime.Parse(dateStr);
+      System.Globalization.DateTimeFormatInfo dtfi = System.Globalization.CultureInfo.CreateSpecificCulture("en-US").DateTimeFormat;
+      dtfi.DateSeparator = "-";
+      dtfi.ShortDatePattern = @"yyyy/MM/dd";
+      return parsedDate.ToString("d", dtfi);
+    }
+
+    /// <summary>
+    /// ToDo:  replace this method
+    /// Simplified method: check if we are going outside of comment block if previously we were
+    /// inside. Or check an oppositve condition..
+    /// 
+    /// Consider following test-cases where,
+    /// \s stands for start, \e stands for end
+    ///  \s\e
+    ///  \e\s
+    ///  \s\s
+    ///  \e\e
+    ///
+    /// Consider cases for testing for inside block comment,
+    /// started in some previous line do we get an ending
+    /// if last found /* is before last found */ then toggle
+    /// </summary>
+    /// <param name="line">Single line</param>
+    /// <param name="isInsideBlockComment">Current status regarding being in block comment</param>
+    /// <returns>
+    /// True if toggling, false otherwise
+    /// </returns>
+    bool isBlockCommentStatusToggling(string line, bool isInsideBlockComment) {
+      if (isInsideBlockComment) {
+        int startPos = line.LastIndexOf("*/");
+        if (startPos == -1)
+          return false;
+        int endPos = line.LastIndexOf("/*");
+        if (endPos == -1)
+          return true;
+        return (startPos >= endPos + 2);
+      }
+      else {
+        int startPos = line.LastIndexOf("/*");
+        if (startPos == -1)
+          return false;
+        int endPos = line.LastIndexOf("*/");
+        if (endPos == -1)
+          return true;
+        return (startPos <= endPos + 2);
+      }
+    }
+
+    /// <summary>
+    /// ToDo: update for new design
     /// Set an action based on user choice and perform action to specified file
     /// This action is stream (file content) editing for the file. Right now,
     /// following caveats are not taken into account,
@@ -130,25 +394,33 @@ namespace ConsoleApp {
     /// - Do all styling to apply modern format in source code
     /// </summary>
     private void ProcessFile(string filePath) {
+      FileInfo.Init(filePath);
       if (ShouldReplaceTabs)
-        ReplaceTabs(filePath);
-      else {
-        IndentAndDocumentationFix(filePath);
+        ReplaceTabs();
+      FileInfo.ReadFile();
+      if (ShouldIndent)
+        Indent();
+      FixDocumentation();
+      if (FileInfo.IsModified) {
+        Console.WriteLine(" " + GetSimplifiedPath(FileInfo.Path) + ": " + FileInfo.ModInfo);
+        ModifiedFileCount++;
+        ExtList.Add(new DirectoryInfo(FileInfo.Path).Extension);
+        if (!ShouldSimulate)
+          FileInfo.WriteFile();
       }
     }
 
     /// <summary>
     /// Check if directory qualifies to be in exclusion list
-    /// Caution: any dir named 'Workspace' will be ignored.
     /// </summary>
     private bool IsInExclusionList(string path) {
       string dirName = new DirectoryInfo(path).Name;
-      var exclusionList = new HashSet<string>() { ".git", "Workspace" };
-      return exclusionList.Contains(dirName);
+      return ExclusionList.Contains(dirName);
     }
 
     /// <summary>
-    /// Process provided directory (recurse)
+    /// Process provided directory (recurse), due to recursion the parameter cannot be replaced
+    /// with class property
     /// </summary>
     private void ProcessDirectory(string dirPath) {
       if (IsInExclusionList(dirPath)) {
@@ -177,15 +449,15 @@ namespace ConsoleApp {
     }
 
     /// <summary>
-    /// Initiate the ToDo Action for the app
+    /// Run automation for the app
     /// </summary>
     public void Run() {
-      if (ShouldReplaceTabs)
-        Console.WriteLine("Selected Action: replacing tabs" + (ShouldSimulate?
-          " (simulated)": ""));
+      /* if (ShouldReplaceTabs)
+        Console.WriteLine("Replacing tabs" + (ShouldSimulate?" (simulated)":
+          ""));
       else
-        Console.WriteLine("Selected Action: indentation and documentation style fix" + (ShouldSimulate?
-          " (simulated)" : ""));
+        Console.WriteLine("Indentation and documentation style fix" +
+          (ShouldSimulate?" (simulated)" : "")); */
       Console.WriteLine("Processing " + (IsDirectory ? "Directory: " + Path + 
         ", File list:" : "File:"));
       if (IsDirectory) {
