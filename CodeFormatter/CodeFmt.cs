@@ -27,7 +27,9 @@ namespace ConsoleApp {
     private bool ShouldIndent { get; set; }
     private bool ShouldSimulate { get; set; }
 
-    private HashSet<string> ExclusionList;
+    private HashSet<string> ExclusionDirList;
+    private HashSet<string> ExclusionExtList;
+
     // Actions Summary Related
     private HashSet<string> ExtList = new HashSet<string>();
     private int ModifiedFileCount = 0;
@@ -74,7 +76,9 @@ namespace ConsoleApp {
     private const int MinIndentLengthExpected = 2;
 
     // Variables/settings related to Comment Style/Documentation
-    private Dictionary<string, string> CBKeysDict;
+    private Dictionary<string, string> CBOldKeysMap;
+    private HashSet<string> CBKeysSet;
+    private const int MaxKeyLength = 6;
 
     /// <summary>
     /// Constructor: sets first 5 properties
@@ -89,8 +93,10 @@ namespace ConsoleApp {
       this.ShouldSimulate = ShouldSimulate;
 
       /// Be aware, any dir named 'Workspace' will be ignored.
-      ExclusionList = new HashSet<string>() { ".git", "Workspace" };
-      CBKeysDict = new Dictionary<string, string>() { { "Title", "Title " }, { "Problem Title", "Title " }, { "Problem Name", "Title " }, { "Problem", "Title " }, { "Problem URL", "URL   " }, { "Date", "Date  " }, { "Author", "Author" }, { "Complexity", "Comp  " }, { "Status", "Status" }, { "Desc", "Notes " }, { "Notes", "Notes " }, { "meta", "meta  " }, { "Email", "Email " }, { "ref", "Ref" } };
+      ExclusionDirList = new HashSet<string>() { ".git", "Workspace" };
+      ExclusionExtList = new HashSet<string>() { "csproj", "py", "txt" };
+      CBOldKeysMap = new Dictionary<string, string>() { { "Problem Link", "URL" }, {"Problem Name", "Title" }, { "Problem Title", "Title" }, { "Problem", "Title" }, { "Problem URL", "URL" }, { "Complexity", "Comp" }, { "Desc", "Notes" }, { "Algorithm", "Algo" }, { "Occassion", "Occasn" }, { "Related", "rel" }, { "Rel", "rel" }, { "Ref", "ref" }, { "Credits", "Ack" } };
+      CBKeysSet = new HashSet<string>() { "Ack", "Algo", "Author", "Comp", "Contst", "Date", "Email", "meta", "Notes", "Occasion", "Occasn", "ref", "rel", "Status", "Title", "URL" };
     }
 
     /// <summary>
@@ -156,12 +162,22 @@ namespace ConsoleApp {
       int startCBIndex, endCBIndex;
       GetSpecialCommentBlock(out startCBIndex, out endCBIndex);
       SetCBEdgeLine(true, startCBIndex);
-      FileInfo.SetDirtyFlag("docu");
 
+      const int MaxCBLinesToProbe = 7;
+      int cbi = 0;
       for (int i = startCBIndex + 1; i < endCBIndex; i++) {
+        var line = FileInfo.Lines[i];
         ReadAndFormat(i);
+        if (!FileInfo.IsModified) {
+          if (line == FileInfo.Lines[i]) {
+            cbi++;
+            if (cbi == MaxCBLinesToProbe)
+              break;
+          }
+          else
+            FileInfo.SetDirtyFlag("docu");
+        }
       }
-
       SetCBEdgeLine(false, endCBIndex);
     }
 
@@ -259,13 +275,12 @@ namespace ConsoleApp {
     /// <summary>
     /// Get key, value pair and write them. Value would need formatting
     /// 
-    /// if no key is found or found key cannot be mapped (has a length greater
-    /// than limit) consider it as continuation multi-line value for previouso
-    /// key
+    /// if no key is found or found key cannot be mapped (has a length greater than limit) consider
+    /// it as continuation multi-line value for previouso key
     /// Using 'Split' is not the right approach here. If key is not known,
-    /// - this can be strings like http://, an explanation of prevoius term
+    /// - this can be string like http://, an explanation of prevoius term
     /// - : for other means
-    /// - For now just inspect for anything exceptional..
+    /// - For now, fix by testing, for anything exceptional..
     /// 
     /// Should be easy to find the key since "Key" strictly cannot contain ':'
     /// 
@@ -284,20 +299,25 @@ namespace ConsoleApp {
         // if on first line, key not found that's an error
         // on this comment: we don't know if this is first line or whatever line it is!
         var pos = line.IndexOf(':');
-        var tempKey = line.Substring(0, pos);
-        if (pos == -1 || pos > 16 || tempKey.EndsWith("http") || tempKey.EndsWith("https")) {
+        if (pos == -1 || pos > 16 || line.Substring(0, pos).EndsWith("http") || line.Substring(0,
+            pos).EndsWith("https")) {
           // About 3 chars for indenting values (that don't have keys)
           line = "*   " + line.TrimStart().TrimEnd();
         }
         else {
-          string newKey = "";
           string key = line.Substring(0, pos).TrimStart().TrimEnd();
-          if (CBKeysDict.TryGetValue(key, out newKey) == false)
+          string newKey = string.Empty;
+          if (CBOldKeysMap.TryGetValue(key, out newKey) == false && CBKeysSet.Contains(key) == false) {
+            System.Diagnostics.Process.Start(@"D:\PFiles_x86\MSVS\2017\Enterprise\Common7\IDE\devenv.exe", "/Edit \"" + FileInfo.Path + "\"");
             throw new InvalidOperationException("key not found: " + key + ", file: " + FileInfo.Path);
+          }
           var val = line.Substring(pos + 1).TrimStart().TrimEnd();
+          if (string.IsNullOrEmpty(newKey) == false)
+            key = newKey;
           if (key == "Date")
             val = FormatDate(val);
-          line = "* " + newKey + " : " + val;
+          int spaceCount = MaxKeyLength - key.Length;
+          line = "* " + key + (spaceCount>0?new string(' ', spaceCount):"") + ": " + val;
         }
       }
       // Debug
@@ -334,11 +354,26 @@ namespace ConsoleApp {
     /// <returns> Returns necessary suffix of file path.</returns>  
     /// </summary>
     private string FormatDate(string dateStr) {
-      DateTime parsedDate = DateTime.Parse(dateStr);
-      System.Globalization.DateTimeFormatInfo dtfi = System.Globalization.CultureInfo.CreateSpecificCulture("en-US").DateTimeFormat;
-      dtfi.DateSeparator = "-";
-      dtfi.ShortDatePattern = @"yyyy/MM/dd";
-      return parsedDate.ToString("d", dtfi);
+      if (string.IsNullOrEmpty(dateStr))
+        return dateStr;
+      var pos = dateStr.IndexOf('(');
+      string info = string.Empty;
+      if (pos != -1) {
+        info = " (" + dateStr.Substring(pos+1);
+        dateStr = dateStr.Substring(0, pos);
+      }
+      try {
+        DateTime parsedDate = DateTime.Parse(dateStr);
+        System.Globalization.DateTimeFormatInfo dtfi = System.Globalization.CultureInfo.CreateSpecificCulture("en-US").DateTimeFormat;
+        dtfi.DateSeparator = "-";
+        dtfi.ShortDatePattern = @"yyyy/MM/dd";
+        string result = parsedDate.ToString("d", dtfi);
+        return (result.Length > dateStr.Length ? dateStr:result) + info;
+      } catch (Exception e) {
+        Console.WriteLine("invalid date string: " + dateStr + ", file: " + FileInfo.Path);
+        System.Diagnostics.Process.Start(@"D:\PFiles_x86\MSVS\2017\Enterprise\Common7\IDE\devenv.exe", "/Edit \"" + FileInfo.Path + "\"");
+        throw e;
+      }
     }
 
     /// <summary>
@@ -394,6 +429,11 @@ namespace ConsoleApp {
     /// - Do all styling to apply modern format in source code
     /// </summary>
     private void ProcessFile(string filePath) {
+      var ext = new DirectoryInfo(filePath).Extension.Substring(1);
+      if (IsInExclusionList(filePath, ext)) {
+        Console.WriteLine(" [Ignored] " + GetSimplifiedPath(filePath));
+        return;
+      }
       FileInfo.Init(filePath);
       if (ShouldReplaceTabs)
         ReplaceTabs();
@@ -404,7 +444,7 @@ namespace ConsoleApp {
       if (FileInfo.IsModified) {
         Console.WriteLine(" " + GetSimplifiedPath(FileInfo.Path) + ": " + FileInfo.ModInfo);
         ModifiedFileCount++;
-        ExtList.Add(new DirectoryInfo(FileInfo.Path).Extension);
+        ExtList.Add(ext);
         if (!ShouldSimulate)
           FileInfo.WriteFile();
       }
@@ -412,10 +452,11 @@ namespace ConsoleApp {
 
     /// <summary>
     /// Check if directory qualifies to be in exclusion list
+    /// Or if it is in extension list to be excluded for being a file
     /// </summary>
-    private bool IsInExclusionList(string path) {
-      string dirName = new DirectoryInfo(path).Name;
-      return ExclusionList.Contains(dirName);
+    private bool IsInExclusionList(string path, string extension="") {
+      return string.IsNullOrEmpty(extension)? ExclusionDirList.Contains(new DirectoryInfo(path).
+        Name) : ExclusionExtList.Contains(extension);
     }
 
     /// <summary>
@@ -439,8 +480,10 @@ namespace ConsoleApp {
     }
 
     public void DisplaySummary() {
+      if (ShouldSimulate)
+        Console.WriteLine("Simulated summary:");
       Console.WriteLine("Number of files modified: " + ModifiedFileCount);
-      Console.WriteLine("Following source files covered:");
+      Console.WriteLine("Following source file types covered:");
       if (ExtList.Count == 0)
         Console.Write( " [Empty]");
       foreach (var ext in ExtList)
@@ -452,12 +495,6 @@ namespace ConsoleApp {
     /// Run automation for the app
     /// </summary>
     public void Run() {
-      /* if (ShouldReplaceTabs)
-        Console.WriteLine("Replacing tabs" + (ShouldSimulate?" (simulated)":
-          ""));
-      else
-        Console.WriteLine("Indentation and documentation style fix" +
-          (ShouldSimulate?" (simulated)" : "")); */
       Console.WriteLine("Processing " + (IsDirectory ? "Directory: " + Path + 
         ", File list:" : "File:"));
       if (IsDirectory) {
