@@ -95,8 +95,8 @@ namespace ConsoleApp {
       /// Be aware, any dir named 'Workspace' will be ignored.
       ExclusionDirList = new HashSet<string>() { ".git", "Workspace" };
       ExclusionExtList = new HashSet<string>() { "csproj", "py", "txt" };
-      CBOldKeysMap = new Dictionary<string, string>() { { "Problem Link", "URL" }, {"Problem Name", "Title" }, { "Problem Title", "Title" }, { "Problem", "Title" }, { "Problem URL", "URL" }, { "Complexity", "Comp" }, { "Desc", "Notes" }, { "Algorithm", "Algo" }, { "Occassion", "Occasn" }, { "Related", "rel" }, { "Rel", "rel" }, { "Ref", "ref" }, { "Credits", "Ack" } };
-      CBKeysSet = new HashSet<string>() { "Ack", "Algo", "Author", "Comp", "Contst", "Date", "Email", "meta", "Notes", "Occasion", "Occasn", "ref", "rel", "Status", "Title", "URL" };
+      CBOldKeysMap = new Dictionary<string, string>() { { "Problem Link", "URL" }, {"Problem Name", "Title" }, { "Problem Title", "Title" }, { "Problem", "Title" }, { "Problem URL", "URL" }, { "Complexity", "Comp" }, { "Desc", "Notes" }, { "Algorithm", "Algo" }, { "Occasion", "Occasn" }, { "Related", "rel" }, { "Rel", "rel" }, { "Ref", "ref" }, { "Credits", "Ack" } };
+      CBKeysSet = new HashSet<string>() { "Ack", "Algo", "Author", "Comp", "Contst", "Date", "Email", "meta", "Notes", "Occasn", "ref", "rel", "Status", "Title", "URL" };
     }
 
     /// <summary>
@@ -156,28 +156,33 @@ namespace ConsoleApp {
     /// <summary>
     /// Fix comment style
     /// Can be callled followed by indent fix
-    /// ToDo later: detect if a line is modified and set a dirty flag based on that
+    /// Detect if a line is modified and set a dirty flag based on that
+    /// Use a separate modified flag because file might be flagged as modified by indenter method
+    /// earlier
     /// </summary>
     public void FixDocumentation() {
       int startCBIndex, endCBIndex;
       GetSpecialCommentBlock(out startCBIndex, out endCBIndex);
       SetCBEdgeLine(true, startCBIndex);
+      bool isModified = false;
 
       const int MaxCBLinesToProbe = 7;
       int cbi = 0;
       for (int i = startCBIndex + 1; i < endCBIndex; i++) {
         var line = FileInfo.Lines[i];
         ReadAndFormat(i);
-        if (!FileInfo.IsModified) {
+        if (!isModified) {
           if (line == FileInfo.Lines[i]) {
             cbi++;
             if (cbi == MaxCBLinesToProbe)
               break;
           }
           else
-            FileInfo.SetDirtyFlag("docu");
+            isModified = true;
         }
       }
+      if (isModified)
+        FileInfo.SetDirtyFlag("docu");
       SetCBEdgeLine(false, endCBIndex);
     }
 
