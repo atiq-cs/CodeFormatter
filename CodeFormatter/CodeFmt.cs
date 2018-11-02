@@ -34,6 +34,9 @@ namespace ConsoleApp {
     private HashSet<string> ExtList = new HashSet<string>();
     private int ModifiedFileCount = 0;
 
+    // Debug related stuff
+    private string VSPath = @"D:\PFiles_x86\MSVS\2017\Enterprise\Common7\IDE\devenv.exe";
+
     /// <summary>
     /// Props/methods related to single file processing
     /// <remarks>
@@ -273,8 +276,10 @@ namespace ConsoleApp {
           else break;
         }
       }
-      if (start == -1 || end == -1 || end - start < 2)
+      if (start == -1 || end == -1 || end - start < 2) {
+        System.Diagnostics.Process.Start(VSPath, "/Edit \"" + FileInfo.Path + "\"");
         throw new InvalidOperationException("Invalid comment block for " + FileInfo.Path);
+      }
     }
 
     /// <summary>
@@ -313,7 +318,7 @@ namespace ConsoleApp {
           string key = line.Substring(0, pos).TrimStart().TrimEnd();
           string newKey = string.Empty;
           if (CBOldKeysMap.TryGetValue(key, out newKey) == false && CBKeysSet.Contains(key) == false) {
-            System.Diagnostics.Process.Start(@"D:\PFiles_x86\MSVS\2017\Enterprise\Common7\IDE\devenv.exe", "/Edit \"" + FileInfo.Path + "\"");
+            System.Diagnostics.Process.Start(VSPath, "/Edit \"" + FileInfo.Path + "\"");
             throw new InvalidOperationException("key not found: " + key + ", file: " + FileInfo.Path);
           }
           var val = line.Substring(pos + 1).TrimStart().TrimEnd();
@@ -376,7 +381,7 @@ namespace ConsoleApp {
         return (result.Length > dateStr.Length ? dateStr:result) + info;
       } catch (Exception e) {
         Console.WriteLine("invalid date string: " + dateStr + ", file: " + FileInfo.Path);
-        System.Diagnostics.Process.Start(@"D:\PFiles_x86\MSVS\2017\Enterprise\Common7\IDE\devenv.exe", "/Edit \"" + FileInfo.Path + "\"");
+        System.Diagnostics.Process.Start(VSPath, "/Edit \"" + FileInfo.Path + "\"");
         throw e;
       }
     }
