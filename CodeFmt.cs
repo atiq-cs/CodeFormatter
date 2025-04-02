@@ -98,7 +98,7 @@ namespace ConsoleApp {
       /// Be aware, any dir named 'Workspace' will be ignored.
       ExclusionDirList = new HashSet<string>() { ".git", "Workspace" };
       ExclusionExtList = new HashSet<string>() { "csproj", "py", "txt" };
-      CBOldKeysMap = new Dictionary<string, string>() { { "Problem Link", "URL" }, {"Problem Name", "Title" }, { "Problem Title", "Title" }, { "Problem", "Title" }, { "Problem URL", "URL" }, { "Complexity", "Comp" }, { "Desc", "Notes" }, { "Algorithm", "Algo" }, { "Occasion", "Occasn" }, { "Related", "rel" }, { "Rel", "rel" }, { "Ref", "ref" }, { "Credits", "Ack" } };
+      CBOldKeysMap = new Dictionary<string, string>() { { "Problem Link", "URL" }, {"Problem Name", "Title" }, { "Problem Title", "Title" }, { "Problem", "Title" }, { "Problem No", "URL" }, { "Problem URL", "URL" }, { "Complexity", "Comp" }, { "Desc", "Notes" }, { "Description", "Notes" }, { "Algorithm", "Algo" }, { "Occasion", "Occasn" }, { "Judge Status", "Status" }, { "Note", "Notes" }, { "Related", "rel" }, { "Rel", "rel" }, { "Ref", "ref" }, { "Credits", "Ack" } };
       CBKeysSet = new HashSet<string>() { "Ack", "Algo", "Author", "Comp", "Contst", "Date", "Email", "meta", "Notes", "Occasn", "ref", "rel", "Status", "Title", "URL" };
     }
 
@@ -370,8 +370,12 @@ namespace ConsoleApp {
       string info = string.Empty;
       if (pos != -1) {
         info = " (" + dateStr.Substring(pos+1);
-        dateStr = dateStr.Substring(0, pos);
+        dateStr = dateStr.Substring(0, pos-1);
       }
+
+      if (dateStr.Length == 8 && dateStr.Contains('-'))
+        dateStr = "20" + dateStr;
+
       try {
         DateTime parsedDate = DateTime.Parse(dateStr);
         System.Globalization.DateTimeFormatInfo dtfi = System.Globalization.CultureInfo.CreateSpecificCulture("en-US").DateTimeFormat;
@@ -439,8 +443,8 @@ namespace ConsoleApp {
     /// - Do all styling to apply modern format in source code
     /// </summary>
     private void ProcessFile(string filePath) {
-      var ext = new DirectoryInfo(filePath).Extension.Substring(1);
-      if (IsInExclusionList(filePath, ext)) {
+      var ext = new DirectoryInfo(filePath).Extension;
+      if (string.IsNullOrEmpty(ext) || IsInExclusionList(filePath, ext.Substring(1))) {
         Console.WriteLine(" [Ignored] " + GetSimplifiedPath(filePath));
         return;
       }
