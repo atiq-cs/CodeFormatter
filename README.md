@@ -41,3 +41,10 @@ As we can see above it,
 
 For More information on this software please have a look at the
 [wiki](https://github.com/atiq-cs/CodeFormatter/wiki/Design-Requirements)
+  
+
+Example from old `Properties\launchSettings.json`,
+
+```
+"commandLineArgs": " --path D:\\Code\\PSolving\\general-solving \\leetcode\\0162_find-peak-element.cs--simulate"
+```
